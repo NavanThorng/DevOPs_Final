@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cart - Pizza & Hamburger</title>
+    <link rel="stylesheet" href="style.css">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+</head>
+<body>
+    <header>
+        <div class="nav container">
+            <a href="index.html" class="logo"><img src="images/logo.png" alt=""></a>
+            <div class="navbar">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="#" class="nav-link">Menu</a>
+                <a href="#" class="nav-link">Contact</a>
+            </div>
+            <div class="nav-icons">
+                <a href="index.html"><i class='bx bx-user'></i></a>
+                <a href="cart.html" class="cart"><i class='bx bxs-shopping-bag'></i><span id="cart-count">0</span></a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container" style="padding-top:120px;">
+        <h1 class="heading">Your Cart</h1>
+        <div id="cart-contents" class="cart-contents">
+            <p>Your cart is empty.</p>
+        </div>
+        <div id="cart-summary" class="cart-summary" style="display:none; margin-top:20px;">
+            <h3>Order Summary</h3>
+            <p id="cart-total">Total: $0.00</p>
+            <button id="checkout-btn" class="add-to-cart">Proceed to Checkout</button>
+        </div>
+    </main>
+
+    <script src="cart.js"></script>
+</body>
+</html>
