@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  php-api:
+    build: .
+    ports:
+      - "8000:80"
+    environment:
+      - DB_HOST=mysql-db
+      - DB_DATABASE=restaurant_db
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+    depends_on:
+      - mysql-db
+
+  mysql-db:
+    image: mysql:8.0
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_DATABASE=restaurant_db
+      - MYSQL_ROOT_PASSWORD=root
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:
