@@ -19,7 +19,6 @@ const animate = ScrollReveal({
     distance: '60px',
     duration: '2500',
     delay: '400', 
-
 });
 
 animate.reveal(".home-text",{origin: "left"});
@@ -44,51 +43,59 @@ const cartCountElem = document.querySelector('.cart span');
 
 let cartCount = parseInt(cartCountElem.textContent) || 0;
 
+// Tracking pointer to remember pristine baseline large prices during active lifecycle ops
+let activeProductBaseLargePrice = 0;
+
 function openProductModal(data){
     modalTitle.textContent = data.name || 'Product';
     modalDesc.textContent = data.description || `Delicious ${data.name}.`;
     modalImage.src = data.image || 'images/home.png';
-    // determine numeric large price (original/large)
-    const largePrice = (typeof data.largePrice === 'number' && !isNaN(data.largePrice)) ? data.largePrice : (function(){
-        const p = (data.price || '') + '';
-        const nums = (p.match(/[0-9]+(?:[.,][0-9]+)?/g) || []).map(s=>parseFloat(s.replace(/,/g,''))).filter(n=>!isNaN(n));
-        return nums.length ? Math.max(...nums) : 0;
-    })();
-    // size discounts
+    
+    // Lock the baseline trace right here to our parsed largePrice parameter
+    const largePrice = (typeof data.largePrice === 'number' && !isNaN(data.largePrice)) ? data.largePrice : 0;
+    activeProductBaseLargePrice = largePrice;
+
+    // Size discounts applied strictly from the discount base price
     const MEDIUM_DISCOUNT = 0.20; // medium is 20% lower than large
     const SMALL_DISCOUNT = 0.10; // small is 10% lower than medium
     const mediumPrice = +(largePrice * (1 - MEDIUM_DISCOUNT));
     const smallPrice = +(mediumPrice * (1 - SMALL_DISCOUNT));
-    // sizes: array
+    
     modalSizesContainer.innerHTML = '';
     const sizes = data.sizes && data.sizes.length ? data.sizes : ['Small','Medium','Large'];
     sizes.forEach((s, idx) => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        // default select Large (if present) otherwise last option
-        const isLarge = s.toLowerCase() === 'large';
-        const defaultSelected = isLarge || (!sizes.some(x=>x.toLowerCase()==='large') && idx === sizes.length-1);
+        
+        // Auto-detect the saved size preference if arriving via the edit pipeline
+        const editIdx = localStorage.getItem('editing_cart_index');
+        let defaultSelected = s.toLowerCase() === 'large';
+        if (editIdx !== null && data.selectedSize) {
+            defaultSelected = s.toLowerCase() === data.selectedSize.toLowerCase();
+        }
+
         btn.className = 'size-option' + (defaultSelected ? ' selected' : '');
         btn.textContent = s;
         btn.dataset.size = s;
-        // attach computed price for this size
+        
         let priceForSize = largePrice;
         if(s.toLowerCase() === 'medium') priceForSize = mediumPrice;
         if(s.toLowerCase() === 'small') priceForSize = smallPrice;
         btn.dataset.price = priceForSize;
+        
         btn.addEventListener('click', () => {
             document.querySelectorAll('.size-option').forEach(n => n.classList.remove('selected'));
             btn.classList.add('selected');
-            // update displayed price
             modalPrice.textContent = formatCurrency(btn.dataset.price);
         });
         modalSizesContainer.appendChild(btn);
-        // if default selected set initial price
+        
         if(defaultSelected){
             modalPrice.textContent = formatCurrency(priceForSize);
         }
     });
-    qtyInput.value = 1;
+    
+    qtyInput.value = data.qty || 1;
     modal.classList.add('open');
     modal.setAttribute('aria-hidden','false');
 }
@@ -106,21 +113,31 @@ function closeModal(){
 document.querySelectorAll('.item-box, .m-item-box').forEach(el=>{
     el.addEventListener('click', (e)=>{
         e.preventDefault();
-        // find name and price
+        
         let name = el.querySelector('h2') ? el.querySelector('h2').textContent.trim() : (el.querySelector('.m-item-des h3') ? el.querySelector('.m-item-des h3').textContent.trim() : 'Product');
-        let priceElem = el.querySelector('.price') || el.querySelector('.m-item-price') || el;
-        let priceText = priceElem ? priceElem.textContent.trim() : '';
+        
+        // TARGET LOGIC FIX: Target the discount heading (h3) explicitly inside the price container
+        let targetHeading = el.querySelector('.price h3, .m-item-price h3');
+        let priceText = targetHeading ? targetHeading.textContent.trim() : '';
+        
         let descElem = el.querySelector('.m-item-des p');
         let description = descElem ? descElem.textContent.trim() : `Delicious ${name} made with fresh ingredients.`;
         const imgElem = el.querySelector('img');
         const image = imgElem ? imgElem.src : 'images/home.png';
-        // extract numeric prices and choose the largest as the large/original price
-        const matches = (priceText.match(/[0-9]+(?:[.,][0-9]+)?/g) || []).map(s=>parseFloat(s.replace(/,/g,''))).filter(n=>!isNaN(n));
-        const largePrice = matches.length ? Math.max(...matches) : (function(){
-            // fallback try to parse any price-like string
-            const p = (priceText||'').replace(/[^0-9.]/g,'');
-            return p ? parseFloat(p) : 0;
-        })();
+        
+        // Extract the correct numeric value from the discount string (e.g. "From $8.99" -> 8.99)
+        const digits = (priceText.match(/[0-9]+(?:[.,][0-9]+)?/g) || []).map(s=>parseFloat(s.replace(/,/g,''))).filter(n=>!isNaN(n));
+        let largePrice = digits.length ? digits[0] : 0; 
+
+        const pendingEdit = localStorage.getItem('trigger_edit_modal');
+        if (pendingEdit) {
+            const editData = JSON.parse(pendingEdit);
+            if (editData.name === name) {
+                largePrice = parseFloat(editData.baseLargePrice) || largePrice;
+                priceText = `$${largePrice.toFixed(2)}`;
+            }
+        }
+
         openProductModal({name, price: priceText, description, image, largePrice});
     });
 });
@@ -132,56 +149,68 @@ window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeModal(); }
 if(qtyInc) qtyInc.addEventListener('click', ()=>{ qtyInput.value = Math.max(1, Number(qtyInput.value) + 1); });
 if(qtyDec) qtyDec.addEventListener('click', ()=>{ qtyInput.value = Math.max(1, Number(qtyInput.value) - 1); });
 
-// (simple handler removed — use persistence handler below)
-
-// Persist cart to localStorage and expose small API
 function loadCartLocal(){
     try{ return JSON.parse(localStorage.getItem('cart_items')||'[]'); }catch(e){return []}
 }
-function saveCartLocal(items){ localStorage.setItem('cart_items', JSON.stringify(items)); }
 
 if(addToCartBtn){
     addToCartBtn.addEventListener('click', ()=>{
         const qty = Math.max(1, parseInt(qtyInput.value) || 1);
-        const selectedSize = (document.querySelector('.size-option.selected') || {}).dataset.size || '';
+        const selectedSize = (document.querySelector('.size-option.selected') || {}).dataset.size || 'Large';
+        
         const item = {
             name: modalTitle.textContent,
             price: modalPrice.textContent,
             size: selectedSize,
             qty: qty,
-            image: modalImage.src
+            image: modalImage.src.includes('images/') ? modalImage.src.substring(modalImage.src.indexOf('images/')) : 'images/home.png',
+            baseLargePrice: activeProductBaseLargePrice
         };
-        const items = loadCartLocal();
-        const existing = items.find(i=> i.name === item.name && i.size === item.size);
-        if(existing) existing.qty = (existing.qty||0) + item.qty; else items.push(item);
-        saveCartLocal(items);
-        // update visual cart count
-        cartCount = items.reduce((s,i)=> s + (i.qty||0), 0);
-        cartCountElem.textContent = cartCount;
-        // also expose to global api for cart page
-        if(window.opener && window.opener.__cartApi) window.opener.__cartApi.add(item);
+
+        let items = [];
+        const raw = localStorage.getItem('cart_items');
+        if(raw) items = JSON.parse(raw);
+
+        const editIndex = localStorage.getItem('editing_cart_index');
+
+        if (editIndex !== null) {
+            items[parseInt(editIndex)] = item;
+            localStorage.removeItem('editing_cart_index');
+            localStorage.setItem('cart_items', JSON.stringify(items));
+            closeModal();
+            window.location.href = 'cart.html';
+            return; 
+        } else {
+            const existing = items.find(i => i.name === item.name && i.size === item.size);
+            if(existing) existing.qty = (existing.qty || 0) + item.qty; else items.push(item);
+        }
+
+        localStorage.setItem('cart_items', JSON.stringify(items));
+        
+        if(typeof cartCount !== 'undefined') {
+            cartCount = items.reduce((s,i)=> s + (i.qty||0), 0);
+            if(cartCountElem) cartCountElem.textContent = cartCount;
+        }
+        
         closeModal();
     });
 }
 
-// initialize cart count from localStorage
 document.addEventListener('DOMContentLoaded', ()=>{
     const items = loadCartLocal();
     cartCount = items.reduce((s,i)=> s + (i.qty||0), 0);
     if(cartCountElem) cartCountElem.textContent = cartCount;
 });
 
-// Collapse extra items (hide items 5-8) in each featured category and add a "Show more" toggle
+// Collapse extra items
 document.addEventListener('DOMContentLoaded', () => {
     const containers = document.querySelectorAll('#items .items-content');
     containers.forEach(container => {
         const items = Array.from(container.querySelectorAll('.item-box'));
-        if(!items || items.length <= 4) return; // nothing to collapse
+        if(!items || items.length <= 4) return;
 
-        // hide items 5.. by default
         items.slice(4).forEach(it => it.style.display = 'none');
 
-        // create toggle button (will be inserted into the grid so it can span columns)
         const toggleWrap = document.createElement('div');
         toggleWrap.className = 'items-toggle';
         const btn = document.createElement('button');
@@ -191,7 +220,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.innerHTML = 'Show more <i class="bx bx-chevron-down"></i>';
         toggleWrap.appendChild(btn);
 
-        // insert as the last grid item inside the container so it centers across columns
         container.appendChild(toggleWrap);
 
         btn.addEventListener('click', () => {
@@ -207,4 +235,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+});
+
+// Structural tracking page listener handler triggers
+document.addEventListener('DOMContentLoaded', () => {
+    const pendingEdit = localStorage.getItem('trigger_edit_modal');
+    if (pendingEdit) {
+        const itemData = JSON.parse(pendingEdit);
+        localStorage.removeItem('trigger_edit_modal'); 
+        
+        if (typeof openProductModal === 'function') {
+            const cartItems = loadCartLocal();
+            const editIdx = localStorage.getItem('editing_cart_index');
+            if (editIdx !== null && cartItems[editIdx]) {
+                itemData.selectedSize = cartItems[editIdx].size;
+                itemData.qty = cartItems[editIdx].qty;
+            }
+            openProductModal(itemData);
+        }
+    }
 });
