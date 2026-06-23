@@ -14,9 +14,29 @@ require_once __DIR__ . '/../CONFIG_folder/db.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = json_decode(file_get_contents("php://input"), true);
     
-    if (!isset($input['cart_items']) || !is_array($input['cart_items'])) {
+    // 1. Validate that authentication details are passed along with the cart
+    if (!isset($input['username']) || !isset($input['phone_number'])) {
+        http_response_code(401);
+        echo json_encode(["status" => "error", "message" => "Authentication details missing. You must log in before ordering."]);
+        exit;
+    }
+
+    if (!isset($input['cart_items'])) {
         http_response_code(400);
-        echo json_encode(["message" => "Invalid order data. cart_items is required."]);
+        echo json_encode(["status" => "error", "message" => "Invalid order data. cart_items is required."]);
+        exit;
+    }
+
+    // Clean data variables matching your database constraints
+    $username = trim($input['username']);
+    $phone_number = trim($input['phone_number']);
+    
+    // If incoming cart items are passed as a JSON string from frontend, decode it safely
+    $cart_data = is_array($input['cart_items']) ? $input['cart_items'] : json_decode($input['cart_items'], true);
+
+    if (!is_array($cart_data)) {
+        http_response_code(400);
+        echo json_encode(["status" => "error", "message" => "Malformed cart items payload format."]);
         exit;
     }
 
@@ -24,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $calculated_total = 0.00;
         $verified_cart_items = [];
 
-        foreach ($input['cart_items'] as $item) {
+        foreach ($cart_data as $item) {
             $name = $item['name'] ?? '';
             $qty = intval($item['qty'] ?? 0);
             $size = $item['size'] ?? 'Large';
@@ -33,26 +53,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 continue;
             }
 
-            // 1. Fetch your current updated price from menu_items table
+            // Fetch current updated price from menu_items table
             $stmt = $pdo->prepare("SELECT price FROM menu_items WHERE name = ? LIMIT 1");
             $stmt->execute([$name]);
             $menu_item = $stmt->fetch();
 
             if ($menu_item) {
-                // This will be exactly 13.50 for Red Smoothie
                 $db_base_price = floatval($menu_item['price']); 
                 
-                // 2. Calculate final price based strictly on the current database price
+                // Calculate final size based pricing rules
                 $final_size_price = $db_base_price; 
                 $clean_size = strtolower(trim($size));
 
                 if ($clean_size === 'medium') {
-                    $final_size_price = $db_base_price * 0.80; // 80% of current database price
+                    $final_size_price = $db_base_price * 0.80; 
                 } elseif ($clean_size === 'small') {
-                    $final_size_price = ($db_base_price * 0.80) * 0.90; // 72% of current database price
+                    $final_size_price = ($db_base_price * 0.80) * 0.90; 
                 }
                 
-                // Keep values clean to 2 decimal places
                 $final_size_price = round($final_size_price, 2);
                 $item_total = $final_size_price * $qty;
                 $calculated_total += $item_total;
@@ -66,28 +84,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ];
             } else {
                 http_response_code(400);
-                echo json_encode(["message" => "Item '$name' does not exist."]);
+                echo json_encode(["status" => "error", "message" => "Item '$name' does not exist."]);
                 exit;
             }
         }
 
         if (empty($verified_cart_items)) {
             http_response_code(400);
-            echo json_encode(["message" => "Cart is empty."]);
+            echo json_encode(["status" => "error", "message" => "Cart is empty."]);
             exit;
         }
 
-        // 3. Save order using your new calculation rules
-        $sql = "INSERT INTO orders (cart_items, total_amount) VALUES (?, ?)";
+        // 2. Save order tracking matching your explicit column names
+        $sql = "INSERT INTO orders (username, phone_number, cart_items, total_amount) VALUES (?, ?, ?, ?)";
         $stmt = $pdo->prepare($sql);
         
         $json_cart = json_encode($verified_cart_items);
-        $stmt->execute([$json_cart, round($calculated_total, 2)]);
+        $stmt->execute([$username, $phone_number, $json_cart, round($calculated_total, 2)]);
 
         $order_id = $pdo->lastInsertId();
 
-        http_response_code(201);
+        http_response_code(201); // Keeping 201 Created status code intact
         echo json_encode([
+            "status" => "success",
             "message" => "Success! Order received by the restaurant database.",
             "order_id" => $order_id,
             "auto_calculated_total" => round($calculated_total, 2)
@@ -95,9 +114,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     } catch (\PDOException $e) {
         http_response_code(500);
-        echo json_encode(["message" => "Failed to save order: " . $e->getMessage()]);
+        echo json_encode(["status" => "error", "message" => "Failed to save order: " . $e->getMessage()]);
     }
 } else {
     http_response_code(405);
-    echo json_encode(["message" => "Method not allowed."]);
+    echo json_encode(["status" => "error", "message" => "Method not allowed."]);
 }
+?>

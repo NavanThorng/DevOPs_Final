@@ -2,15 +2,17 @@
 let menu = document.querySelector('.menu-icon');
 let navbar = document.querySelector('.navbar');
 
-menu.onclick = () => {
-    menu.classList.toggle("move");
-    navbar.classList.toggle("open-menu");
-};
+if (menu) {
+    menu.onclick = () => {
+        menu.classList.toggle("move");
+        navbar.classList.toggle("open-menu");
+    };
+}
 
 // Close Menu On Scroll
 window.onscroll = () => {
-    menu.classList.remove("move");
-    navbar.classList.remove("open-menu");
+    if (menu) menu.classList.remove("move");
+    if (navbar) navbar.classList.remove("open-menu");
 };
 
 // Scroll Reveal
@@ -41,12 +43,13 @@ const qtyDec = document.getElementById('qty-decrease');
 const addToCartBtn = document.getElementById('add-to-cart');
 const cartCountElem = document.querySelector('.cart span');
 
-let cartCount = parseInt(cartCountElem.textContent) || 0;
+let cartCount = cartCountElem ? (parseInt(cartCountElem.textContent) || 0) : 0;
 
 // Tracking pointer to remember pristine baseline large prices during active lifecycle ops
 let activeProductBaseLargePrice = 0;
 
 function openProductModal(data){
+    if (!modalTitle) return;
     modalTitle.textContent = data.name || 'Product';
     modalDesc.textContent = data.description || `Delicious ${data.name}.`;
     modalImage.src = data.image || 'images/home.png';
@@ -95,7 +98,7 @@ function openProductModal(data){
         }
     });
     
-    qtyInput.value = data.qty || 1;
+    if (qtyInput) qtyInput.value = data.qty || 1;
     modal.classList.add('open');
     modal.setAttribute('aria-hidden','false');
 }
@@ -106,8 +109,10 @@ function formatCurrency(v){
 }
 
 function closeModal(){
-    modal.classList.remove('open');
-    modal.setAttribute('aria-hidden','true');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden','true');
+    }
 }
 
 document.querySelectorAll('.item-box, .m-item-box').forEach(el=>{
@@ -146,15 +151,15 @@ if(modalClose) modalClose.addEventListener('click', closeModal);
 if(modalOverlay) modalOverlay.addEventListener('click', closeModal);
 window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape') closeModal(); });
 
-if(qtyInc) qtyInc.addEventListener('click', ()=>{ qtyInput.value = Math.max(1, Number(qtyInput.value) + 1); });
-if(qtyDec) qtyDec.addEventListener('click', ()=>{ qtyInput.value = Math.max(1, Number(qtyInput.value) - 1); });
+if(qtyInc) qtyInc.addEventListener('click', ()=>{ if (qtyInput) qtyInput.value = Math.max(1, Number(qtyInput.value) + 1); });
+if(qtyDec) qtyDec.addEventListener('click', ()=>{ if (qtyInput) qtyInput.value = Math.max(1, Number(qtyInput.value) - 1); });
 
 function loadCartLocal(){
     try{ return JSON.parse(localStorage.getItem('cart_items')||'[]'); }catch(e){return []}
 }
 
 if(addToCartBtn){
-    addToCartBtn.addEventListener('click', ()=>{
+    addToCartBtn.addEventListener('click', () => {
         const qty = Math.max(1, parseInt(qtyInput.value) || 1);
         const selectedSize = (document.querySelector('.size-option.selected') || {}).dataset.size || 'Large';
         
@@ -255,3 +260,104 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
+
+// Connect the Profile Icon to the Auth Modal Popup
+const profileIcon = document.getElementById('profile-icon');
+const authModal = document.getElementById('authModal');
+const closeAuth = document.getElementById('closeAuth');
+const authForm = document.getElementById('authForm');
+
+// 1. Open login popup when clicking the person icon
+if (profileIcon) {
+    profileIcon.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (authModal) authModal.style.display = 'flex';
+    });
+}
+
+// 2. Close login popup when clicking the 'X'
+closeAuth?.addEventListener('click', () => {
+    if (authModal) authModal.style.display = 'none';
+});
+
+if (authModal) {
+    authModal.addEventListener('click', (e) => {
+        if (e.target === authModal) {
+            authModal.style.display = 'none';
+        }
+    });
+}
+
+// 3. Phone Authentication Validation & Backend sync
+if (authForm) {
+    authForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        let isValid = true;
+        
+        const phoneVal = document.getElementById('authPhone').value.trim();
+        const userVal = document.getElementById('authUser').value.trim();
+        const passVal = document.getElementById('authPass').value.trim();
+        
+        const phoneError = document.getElementById('authPhoneError');
+        const userError = document.getElementById('authUserError');
+        const passError = document.getElementById('authPassError');
+
+        // Phone number layout verification checking rules
+        if (phoneVal.length < 8) {
+            if (phoneError) phoneError.style.display = 'block';
+            isValid = false;
+        } else {
+            if (phoneError) phoneError.style.display = 'none';
+        }
+
+        // Username layout verification checking rules
+        if (userVal.length < 4) {
+            if (userError) userError.style.display = 'block';
+            isValid = false;
+        } else {
+            if (userError) userError.style.display = 'none';
+        }
+
+        // Password layout verification checking rules
+        if (passVal.length < 6) {
+            if (passError) passError.style.display = 'block';
+            isValid = false;
+        } else {
+            if (passError) passError.style.display = 'none';
+        }
+
+        if (isValid) {
+            // Dispatches validation records directly to auth endpoint matching cart system
+            fetch('http://127.0.0.1:8000/API_folder/auth.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    phone_number: phoneVal,
+                    username: userVal,
+                    password: passVal
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === "success") {
+                    alert(data.message);
+                    
+                    // Match the state keys perfectly so checkout verification finds the items
+                    sessionStorage.setItem('userPhone', phoneVal);
+                    sessionStorage.setItem('userUsername', userVal);
+                    
+                    if (authModal) authModal.style.display = 'none';
+                    authForm.reset();
+                } else {
+                    alert("⚠️ Authentication Error: " + data.message);
+                }
+            })
+            .catch(err => {
+                console.error("Auth System Error:", err);
+                alert("Backend server connection failed during account sync.");
+            });
+        }
+    });
+}

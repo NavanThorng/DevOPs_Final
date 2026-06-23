@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     renderCart();
+    initCartAuthModal();
 });
 
 function formatPrice(p){
@@ -28,18 +29,19 @@ function renderCart(){
     const displayCount = document.getElementById('cart-count');
     if(displayCount) displayCount.textContent = cartCount;
 
+    if(!contents) return;
+
     if(items.length === 0){
         contents.innerHTML = '<p>Your cart is empty.</p>';
-        summary.style.display = 'none';
+        if(summary) summary.style.display = 'none';
         return;
     }
 
-    summary.style.display = 'block';
+    if(summary) summary.style.display = 'block';
     contents.innerHTML = '';
     let total = 0;
     
     items.forEach((it, idx)=>{
-        // Use your clean parsed discount base price explicitly
         const baselinePrice = parseFloat(it.baseLargePrice) || parseFloat((it.price||'').replace(/[^0-9.]/g,'')) || 0;
         
         let finalPriceForSize = baselinePrice; // Base price is Large
@@ -74,7 +76,7 @@ function renderCart(){
         total += finalPriceForSize * (it.qty||1);
     });
     
-    totalEl.textContent = `Total: $${total.toFixed(2)}`;
+    if(totalEl) totalEl.textContent = `Total: $${total.toFixed(2)}`;
 
     // Set up Remove Item Listeners
     document.querySelectorAll('.remove-item').forEach(btn=>{
@@ -101,8 +103,8 @@ function renderCart(){
             const modalPayload = {
                 name: itemToEdit.name,
                 price: `$${originalBasePrice.toFixed(2)}`,
-                largePrice: originalBasePrice,     // FIXED: Added here to align with main.js openProductModal expectations
-                baseLargePrice: originalBasePrice, // Fallback safety parameter
+                largePrice: originalBasePrice,
+                baseLargePrice: originalBasePrice,
                 image: itemToEdit.image,
                 description: `Adjust your options for ${itemToEdit.name}.`
             };
@@ -129,7 +131,7 @@ function computeTotal(){
     }, 0);
 }
 
-function showCheckoutModal(total, qrOverride){
+function showCheckoutModal(total){
     if(document.getElementById('checkout-modal')) return;
     const qrText = `Total: $${total.toFixed(2)}`;
     const qrSrc = 'images/image.png';
@@ -137,15 +139,15 @@ function showCheckoutModal(total, qrOverride){
     modal.id = 'checkout-modal';
     modal.className = 'checkout-dialog';
     modal.innerHTML = `
-        <div class="checkout-overlay"></div>
-        <div class="checkout-box">
-            <button class="checkout-close" aria-label="Close">&times;</button>
+        <div class="checkout-overlay" style="position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:2000;"></div>
+        <div class="checkout-box" style="position: fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:30px; border-radius:10px; box-shadow:0 4px 15px rgba(0,0,0,0.3); z-index:2001; text-align:center; width:300px;">
+            <button class="checkout-close" aria-label="Close" style="position:absolute; top:10px; right:15px; background:none; border:none; font-size:22px; font-weight:bold; cursor:pointer;">&times;</button>
             <div class="checkout-content">
-                <img class="checkout-qr" src="${qrSrc}" alt="QR code">
-                <div class="checkout-amount">${qrText}</div>
-                <div class="checkout-actions">
-                    <button id="checkout-cancel" class="btn-cancel">Cancel</button>
-                    <button id="checkout-done" class="btn-done">Done</button>
+                <img class="checkout-qr" src="${qrSrc}" alt="QR code" style="width:200px; height:200px; margin-bottom:15px;">
+                <div class="checkout-amount" style="font-size:18px; font-weight:bold; color:#333; margin-bottom:20px;">${qrText}</div>
+                <div class="checkout-actions" style="display:flex; gap:10px; justify-content:center;">
+                    <button id="checkout-cancel" class="btn-cancel" style="padding:10px 20px; border:1px solid #ccc; background:#fff; border-radius:5px; cursor:pointer;">Cancel</button>
+                    <button id="checkout-done" class="btn-done" style="padding:10px 20px; border:none; background:#ff4757; color:white; font-weight:bold; border-radius:5px; cursor:pointer;">Done</button>
                 </div>
             </div>
         </div>
@@ -159,20 +161,34 @@ function showCheckoutModal(total, qrOverride){
     modal.querySelector('#checkout-cancel').addEventListener('click', removeModal);
     
     modal.querySelector('#checkout-done').addEventListener('click', () => {
-        const currentCart = loadCart();
+        
+        // CHECK IF LOGGED IN COHESIVELY WITH SESSIONSTORAGE KEY
+        const activePhone = sessionStorage.getItem('userPhone');
+        const activeUser = sessionStorage.getItem('userUsername');
+        
+        if (!activePhone || !activeUser) {
+            alert("⚠️ Authentication Required! Please enter your phone number, name, and password using the profile icon at the top of the page before completing your order.");
+            removeModal();
+            return;
+        }
 
+        const currentCart = loadCart();
         if (!currentCart || currentCart.length === 0) {
             alert("Your cart is empty!");
             return;
         }
 
+        // Send cart data alongside database values matching phone primary constraint layout
         fetch('http://127.0.0.1:8000/API_folder/orders.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                cart_items: currentCart
+                username: activeUser,
+                phone_number: activePhone,
+                cart_items: JSON.stringify(currentCart),
+                total_amount: total
             })
         })
         .then(response => {
@@ -182,19 +198,125 @@ function showCheckoutModal(total, qrOverride){
             return response.json();
         })
         .then(data => {
-            alert("Success! " + (data.message || "Order processed successfully!") + "\nOrder ID: " + (data.order_id || "Received")); 
-            saveCart([]);
-            removeModal();
-            renderCart();
-            
-            const headerCount = document.getElementById('cart-count');
-            if(headerCount) headerCount.textContent = 0;
+            if(data.status === "success") {
+                alert("Success! " + (data.message || "Order processed successfully!") + "\nOrder ID: " + (data.order_id || "Received")); 
+                saveCart([]);
+                removeModal();
+                renderCart();
+                
+                const headerCount = document.getElementById('cart-count');
+                if(headerCount) headerCount.textContent = 0;
+            } else {
+                alert("Order Failed: " + data.message);
+            }
         })
         .catch(err => {
             console.error("API Connection Error:", err);
-            alert("Connection Failed! Make sure Docker is running inside restaurant_backend.");
+            alert("Connection Failed! Make sure your backend API folder server container is active.");
         });
     });
+}
+
+// Controls checking/registering phone authentication states seamlessly
+function initCartAuthModal() {
+    const profileIcon = document.getElementById('profile-icon');
+    const authModal = document.getElementById('authModal');
+    const closeAuth = document.getElementById('closeAuth');
+    const authForm = document.getElementById('authForm');
+
+    if (profileIcon) {
+        profileIcon.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (authModal) authModal.style.display = 'flex';
+        });
+    }
+
+    if (closeAuth) {
+        closeAuth.addEventListener('click', () => {
+            if (authModal) authModal.style.display = 'none';
+        });
+    }
+
+    if (authModal) {
+        authModal.addEventListener('click', (e) => {
+            if (e.target === authModal) {
+                authModal.style.display = 'none';
+            }
+        });
+    }
+
+    if (authForm) {
+        authForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            let isValid = true;
+            
+            const phoneVal = document.getElementById('authPhone').value.trim();
+            const userVal = document.getElementById('authUser').value.trim();
+            const passVal = document.getElementById('authPass').value.trim();
+            
+            const phoneError = document.getElementById('authPhoneError');
+            const userError = document.getElementById('authUserError');
+            const passError = document.getElementById('authPassError');
+
+            // Phone number length constraint check
+            if (phoneVal.length < 8) {
+                if (phoneError) phoneError.style.display = 'block';
+                isValid = false;
+            } else {
+                if (phoneError) phoneError.style.display = 'none';
+            }
+
+            // Username validation constraint check
+            if (userVal.length < 4) {
+                if (userError) userError.style.display = 'block';
+                isValid = false;
+            } else {
+                if (userError) userError.style.display = 'none';
+            }
+
+            // Password validation constraint check
+            if (passVal.length < 6) {
+                if (passError) passError.style.display = 'block';
+                isValid = false;
+            } else {
+                if (passError) passError.style.display = 'none';
+            }
+
+            if (isValid) {
+                // Fetch request to backend handling combined Login/Register functionality
+                fetch('http://127.0.0.1:8000/API_folder/auth.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        phone_number: phoneVal,
+                        username: userVal,
+                        password: passVal
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        alert(data.message); // Will say "Login Successful" or "Registration Successful"
+                        
+                        // Save identity info securely to storage state matching the order script tracking
+                        sessionStorage.setItem('userPhone', phoneVal);
+                        sessionStorage.setItem('userUsername', userVal);
+                        
+                        if (authModal) authModal.style.display = 'none';
+                        authForm.reset();
+                    } else {
+                        alert("⚠️ Authentication Error: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Auth System Error:", err);
+                    alert("Backend server connection failed during account sync.");
+                });
+            }
+        });
+    }
 }
 
 const checkoutBtn = document.getElementById('checkout-btn');
