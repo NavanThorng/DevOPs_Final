@@ -199,7 +199,7 @@ function showCheckoutModal(total){
         })
         .then(data => {
             if(data.status === "success") {
-                alert("Success! " + (data.message || "Order processed successfully!") + "\nOrder ID: " + (data.order_id || "Received")); 
+                alert("Success! " + (data.message || "Order processed successfully?????????") + "\nOrder ID: " + (data.order_id || "Received")); 
                 saveCart([]);
                 removeModal();
                 renderCart();
