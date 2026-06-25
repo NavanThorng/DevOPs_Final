@@ -328,7 +328,7 @@ if (authForm) {
 
         if (isValid) {
             // Dispatches validation records directly to auth endpoint matching cart system
-            fetch('https://burgeraub.xyz/API_folder/auth.php', {
+            fetch('http://127.0.0.1:8000/API_folder/auth.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

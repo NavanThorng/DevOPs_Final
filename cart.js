@@ -179,7 +179,7 @@ function showCheckoutModal(total){
         }
 
         // Send cart data alongside database values matching phone primary constraint layout
-        fetch('https://burgeraub.xyz/API_folder/orders.php', {
+        fetch('http://127.0.0.1:8000/API_folder/orders.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -284,7 +284,7 @@ function initCartAuthModal() {
 
             if (isValid) {
                 // Fetch request to backend handling combined Login/Register functionality
-                fetch('https://burgeraub.xyz/API_folder/auth.php', {
+                fetch('http://127.0.0.1:8000/API_folder/auth.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
